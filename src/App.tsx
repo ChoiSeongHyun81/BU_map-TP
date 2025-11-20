@@ -10,12 +10,19 @@ declare global {
 }
 type LatLng = { lat: number; lng: number };
 
+<<<<<<< HEAD
 //초기 위치 고정, 경계, 줌 제한
+=======
+>>>>>>> 3cba41731f145bb30625096caa62e61929353ccc
 const INIT: LatLng = { lat: 36.8401262, lng: 127.184586 };
 const BOUNDS_SW: LatLng = { lat: 36.8335, lng: 127.1800 };
 const BOUNDS_NE: LatLng = { lat: 36.8428, lng: 127.1888 };
 const MIN_ZOOM = 16;
 const MAX_ZOOM = 20;
+<<<<<<< HEAD
+=======
+
+>>>>>>> 3cba41731f145bb30625096caa62e61929353ccc
 const SIDEBAR_W = 360 as const;
 
 export default function App() {
@@ -25,6 +32,7 @@ export default function App() {
   const infoRefs = useRef<any[]>([]);
   const tempMarkerRef = useRef<any | null>(null);
 
+<<<<<<< HEAD
   // 공통함수 추가했습니다. (성현)
   const closeAllInfo = () => {
     infoRefs.current.forEach((i) => i.close());
@@ -54,6 +62,8 @@ export default function App() {
     return null;  // 새 창(detail 페이지)에서는 지도 렌더링 안 함
   }
 
+=======
+>>>>>>> 3cba41731f145bb30625096caa62e61929353ccc
   // 좌표 찍기
   const [clicked, setClicked] = useState<LatLng | null>(null);
 
@@ -63,7 +73,10 @@ export default function App() {
   const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
   const [panelMode, setPanelMode] = useState<"list" | "detail">("list"); // ← 하나의 패널 모드
 
+<<<<<<< HEAD
   //검색 캐싱
+=======
+>>>>>>> 3cba41731f145bb30625096caa62e61929353ccc
   const results = useMemo(() => {
     const kw = q.trim().toLowerCase();
     if (!kw) return [];
@@ -89,7 +102,10 @@ export default function App() {
     const { naver } = window;
     if (!naver || !mapDivRef.current) return;
 
+<<<<<<< HEAD
     //지도 생성
+=======
+>>>>>>> 3cba41731f145bb30625096caa62e61929353ccc
     const map = new naver.maps.Map(mapDivRef.current, {
       center: new naver.maps.LatLng(INIT.lat, INIT.lng),
       zoom: 18,
@@ -125,6 +141,7 @@ export default function App() {
       if (z > MAX_ZOOM) map.setZoom(MAX_ZOOM);
     });
 
+<<<<<<< HEAD
 
     // 마커 & 말풍선
   buildings.forEach((b: Building, idx: number) => {
@@ -239,6 +256,31 @@ export default function App() {
   });
 });
 
+=======
+    // 마커 & 말풍선
+    buildings.forEach((b, idx) => {
+      const pos = new naver.maps.LatLng(b.lat, b.lng);
+      const marker = new naver.maps.Marker({ map, position: pos, title: b.name });
+      markersRef.current.push(marker);
+
+      const info = new naver.maps.InfoWindow({
+        content: `<div style="padding:8px;font-size:13px"><b>${b.name}</b>${
+          b.desc ? `<div>${b.desc}</div>` : ""
+        }</div>`,
+      });
+      infoRefs.current.push(info);
+
+      naver.maps.Event.addListener(marker, "click", () => {
+        // 말풍선은 짧게, 좌측 패널은 detail 모드로
+        infoRefs.current.forEach((i) => i.close());
+        info.open(map, marker);
+        map.panTo(pos);
+
+        setSelectedBuilding(b);
+        setPanelMode("detail"); // ← 패널 전환
+      });
+    });
+>>>>>>> 3cba41731f145bb30625096caa62e61929353ccc
 
     // 지도 클릭 → 임시 핀
     naver.maps.Event.addListener(map, "click", (e: any) => {
@@ -274,6 +316,7 @@ export default function App() {
     };
   }, []);
 
+<<<<<<< HEAD
   // 특정 빌딩으로 이동 + 패널 전환 (검색창에서 검색했을때)
   const focusBuilding = (idx: number) => {
     //map, marker, infowindow 객체 가져오기
@@ -292,6 +335,23 @@ export default function App() {
     //ps.즐겨찾기 리스트로 수정예정 (173줄, 232줄)
     setSelectedBuilding(buildings[idx]);  //보여줄 건물 정보 불러오기
     setPanelMode("detail");  // 검색 리스트에서 상세정보로 
+=======
+  // 특정 빌딩으로 이동 + 패널 전환
+  const focusBuilding = (idx: number) => {
+    const map = mapRef.current;
+    const marker = markersRef.current[idx];
+    const info = infoRefs.current[idx];
+    if (!map || !marker || !info) return;
+
+    const pos = marker.getPosition();
+    if (map.getZoom() < 18) map.setZoom(18);
+    map.panTo(pos);
+    infoRefs.current.forEach((i) => i.close());
+    info.open(map, marker);
+
+    setSelectedBuilding(buildings[idx]);
+    setPanelMode("detail"); // ← 리스트에서 상세로
+>>>>>>> 3cba41731f145bb30625096caa62e61929353ccc
   };
 
   // 검색 제출/키보드
@@ -432,12 +492,20 @@ export default function App() {
               </div>
             )
           ) : (
+<<<<<<< HEAD
             //── 상세보기 ──
             //이곳에 즐겨찾기 목록 만들면 될것 같습니다.
             <div style={{ padding: 12 }}>
               {selectedBuilding ? (
                 <>
                   //상단이름 강조
+=======
+            // ── 상세보기 ──
+            <div style={{ padding: 12 }}>
+              {selectedBuilding ? (
+                <>
+                  {/* 상단 이름 강조 */}
+>>>>>>> 3cba41731f145bb30625096caa62e61929353ccc
                   <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 6 }}>
                     {selectedBuilding.name}
                   </div>
