@@ -1,20 +1,46 @@
 import { useState } from "react";
+import { isAxiosError } from "axios";
 import "./Login.css";
+import { signup } from "../lib/authApi";
+import { useUiStore } from "../stores/uiStore";
+import type { SignupRequest } from "../types/api";
+import { useNavigate } from "react-router-dom";
 
 function Register() {
   const [nickname, setNickname] = useState(""); // 닉네임
   const [student_id, setStudentId] = useState(""); // 아이디
   const [password, setPassword] = useState(""); // 패스워드
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { pushToast } = useUiStore();
+  const navigate = useNavigate();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (submitting) return;
     if (!nickname || !student_id || !password) {
-      alert("이름, 학번/아이디, 비밀번호를 입력해주세요.");
+      setError("이름, 학번/아이디, 비밀번호를 입력해주세요.");
       return;
     }
 
-    alert("회원가입 성공(아님)"); // 회원가입(가짜) 성공 메세지
+    const body: SignupRequest = { nickname, student_id, password };
+    setSubmitting(true);
+    setError(null);
+
+    signup(body)
+      .then(() => {
+        pushToast({ message: "회원가입이 완료되었습니다. 로그인해주세요.", type: "success" });
+        navigate("/");
+      })
+      .catch((err) => {
+        if (isAxiosError(err) && err.response?.status === 409) {
+          setError("이미 존재하는 학번입니다.");
+        } else {
+          setError("회원가입 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+        }
+      })
+      .finally(() => setSubmitting(false));
   };
 
   return (
@@ -64,8 +90,14 @@ function Register() {
             />
           </div> 
 
-          <button type="submit" className="login-button">
-            회원가입
+          {error && (
+            <div className="text-red-600 text-sm" style={{ marginTop: 4 }}>
+              {error}
+            </div>
+          )}
+
+          <button type="submit" className="login-button" disabled={submitting}>
+            {submitting ? "처리 중..." : "회원가입"}
           </button>
 
         </form>

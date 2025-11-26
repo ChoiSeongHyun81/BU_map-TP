@@ -1,9 +1,13 @@
 import { useState } from "react";
-import { buildings, type Building } from "../buildings";
+import type { BuildingDetail } from "../types/api";
 import PlaceInfo from "./PlaceInfo";
 
-export default function BuildingList() {
-  const [selected, setSelected] = useState<Building | null>(null);
+type BuildingListProps = {
+  buildings: BuildingDetail[];
+};
+
+export default function BuildingList({ buildings }: BuildingListProps) {
+  const [selected, setSelected] = useState<BuildingDetail | null>(null);
 
   return (
     <div className="p-4 space-y-4">
