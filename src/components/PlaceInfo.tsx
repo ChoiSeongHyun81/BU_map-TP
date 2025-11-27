@@ -1,12 +1,22 @@
-import { useState } from "react";
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
 import PlaceDetail from "./PlaceDetail";
-import type { Building } from "../buildings";
+import type { BuildingDetail } from "../types/api";
 import { FaStar } from "react-icons/fa";
+import { addFavorite, removeFavorite } from "../lib/favoriteApi";
+import { useDataStore } from "../stores/dataStore";
 
 type PlaceInfoProps = Pick<
-  Building,
-  "id" | "name" | "category" | "address" | "openingHours" | "website" | "image"
+  BuildingDetail,
+  | "id"
+  | "name"
+  | "category"
+  | "address"
+  | "openingHours"
+  | "website"
+  | "image"
+  | "floors"
+  | "description"
+  | "desc"
 >;
 
 export default function PlaceInfo({
@@ -17,21 +27,47 @@ export default function PlaceInfo({
   openingHours,
   website,
   image,
+  floors,
+  description,
+  desc,
 }: PlaceInfoProps) {
   const storageKey = `favorite_${id}`;
-
+  const { favorites, addFavorite: addFavStore, removeFavorite: removeFavStore } =
+    useDataStore();
   const [isFavorite, setIsFavorite] = useState<boolean>(false);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem(storageKey);
-    setIsFavorite(saved === "true");
-  }, [id]);
+    const inStore = favorites.some((f) => String(f.roomId) === String(id));
+    setIsFavorite(saved === "true" || inStore);
+  }, [id, favorites]);
   
   //즐겨찾기 토글 관리
   const toggleFavorite = () => {
+    if (submitting) return;
     const updated = !isFavorite;
-    setIsFavorite(updated);
-    localStorage.setItem(storageKey, String(updated));
+    setSubmitting(true);
+    const roomId = id;
+    const doToggle = async () => {
+      try {
+        if (updated) {
+          await addFavorite(roomId);
+          addFavStore({ roomId });
+        } else {
+          await removeFavorite(roomId);
+          removeFavStore(roomId);
+        }
+        setIsFavorite(updated);
+        localStorage.setItem(storageKey, String(updated)); // InfoWindow 동기화
+      } catch (err) {
+        console.error("[PlaceInfo] favorite toggle failed", err);
+        alert("즐겨찾기 처리에 실패했습니다.");
+      } finally {
+        setSubmitting(false);
+      }
+    };
+    void doToggle();
   };
 
   useEffect(() => {
@@ -45,13 +81,15 @@ export default function PlaceInfo({
     return () => window.removeEventListener("storage", onStorage);
   }, [id, storageKey]);
 
+  const displayName = name && name.trim().length ? name : `건물 ${id ?? ""}`;
+
   return (
-     <div className="bg-white rounded-2xl shadow-md overflow-hidden w-full max-w-md">
+    <div className="bg-white rounded-2xl shadow-md overflow-hidden w-full max-w-md">
       {image && <img src={image} alt={name} className="w-full h-48 object-cover" />}
 
       <div className="p-4 flex justify-between items-center">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">{name}</h2>
+          <h2 className="text-xl font-bold text-gray-900">{displayName}</h2>
           {category && <p className="text-sm text-blue-600">{category}</p>}
         </div>
 
@@ -59,7 +97,7 @@ export default function PlaceInfo({
           onClick={toggleFavorite}
           size={28}
           style={{ color: isFavorite ? "gold" : "#d1d5db" }}
-          className="cursor-pointer transition-colors"
+          className={`cursor-pointer transition-colors ${submitting ? "opacity-50" : ""}`}
         />
       </div>
 
@@ -68,6 +106,9 @@ export default function PlaceInfo({
         openingHours={openingHours}
         address={address}
         website={website}
+        floors={floors}
+        id={id}
+        description={description ?? desc}
       />
     </div>
   );

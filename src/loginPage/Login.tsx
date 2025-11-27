@@ -1,11 +1,20 @@
 import { useState } from "react";
-import "./Login.css"; 
+import { isAxiosError } from "axios";
+import "./Login.css";
 import logo from "../assets/mapLogo.png";
 import { useNavigate } from "react-router-dom";
+import { login as loginApi } from "../lib/authApi";
+import { useAuthStore } from "../stores/authStore";
+import { useUiStore } from "../stores/uiStore";
+import type { LoginRequest } from "../types/api";
 
 function Login() {
   const [student_id, setStudentId] = useState("");
   const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { setTokens, setUser } = useAuthStore();
+  const { pushToast } = useUiStore();
   const navigate = useNavigate();
   const goToRegister = () => {
     navigate("/register");
@@ -14,11 +23,31 @@ function Login() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (submitting) return;
     if (!student_id || !password) {
-      alert("학번/아이디, 비밀번호를 입력해주세요.");
+      setError("학번/아이디와 비밀번호를 입력해주세요.");
       return;
     }
-    navigate("/app") 
+
+    const payload: LoginRequest = { student_id, password };
+    setSubmitting(true);
+    setError(null);
+
+    loginApi(payload)
+      .then((tokens) => {
+        setTokens(tokens);
+        setUser({ student_id });
+        pushToast({ message: "로그인에 성공했습니다.", type: "success" });
+        navigate("/app");
+      })
+      .catch((err) => {
+        if (isAxiosError(err) && err.response?.status === 401) {
+          setError("학번 또는 비밀번호가 올바르지 않습니다.");
+        } else {
+          setError("로그인 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+        }
+      })
+      .finally(() => setSubmitting(false));
   };
 
   return (
@@ -62,8 +91,14 @@ function Login() {
             />
           </div>
 
-          <button type="submit" className="login-button">
-            로그인
+          {error && (
+            <div className="text-red-600 text-sm" style={{ marginTop: 4 }}>
+              {error}
+            </div>
+          )}
+
+          <button type="submit" className="login-button" disabled={submitting}>
+            {submitting ? "로그인 중..." : "로그인"}
           </button>
 
         </form>

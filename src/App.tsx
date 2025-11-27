@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { buildings, type Building } from "./buildings";
 import PlaceDetail from "./components/PlaceDetail";
+import { getBuildingDetail, getBuildings } from "./lib/buildingApi";
+import { getFavorites, addFavorite, removeFavorite } from "./lib/favoriteApi";
+import { searchBuildings } from "./lib/searchApi";
+import type { BuildingDetail, BuildingSummary } from "./types/api";
+import { useDataStore } from "./stores/dataStore";
 
 declare global {
   interface Window {
@@ -20,11 +24,18 @@ const MAX_ZOOM = 20;
 const SIDEBAR_W = 360 as const;
 
 export default function App() {
+  console.info("[App] render", { pathname: window.location.pathname, hash: window.location.hash });
   const mapDivRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
   const infoRefs = useRef<any[]>([]);
   const tempMarkerRef = useRef<any | null>(null);
+  const { favorites, setFavorites, addFavorite: addFavStore, removeFavorite: removeFavStore } =
+    useDataStore();
+
+  const [buildings, setBuildings] = useState<BuildingDetail[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // 공통함수 추가했습니다. (성현)
   // 공통: 모든 인포윈도우 닫기
@@ -33,7 +44,7 @@ export default function App() {
   };
 
   // 인포윈도우에서 "상세 정보 보기" 버튼 클릭 → 새창으로 detail 열기
-  const registerDetailButtonClick = (btnId: string, buildingId: Building["id"]) => {
+  const registerDetailButtonClick = (btnId: string, buildingId: string) => {
     const { naver } = window;
     const map = mapRef.current;
     if (!naver || !map) return;
@@ -60,36 +71,126 @@ export default function App() {
   const [clicked, setClicked] = useState<LatLng | null>(null);
   const [q, setQ] = useState("");
   const [activeIdx, setActiveIdx] = useState(-1);
-  const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
+  const [selectedBuilding, setSelectedBuilding] = useState<BuildingDetail | null>(null);
   const [panelMode, setPanelMode] = useState<"list" | "detail">("list");
+  const [searchResults, setSearchResults] = useState<BuildingDetail[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   // 검색 캐싱
   const results = useMemo(() => {
-    const kw = q.trim().toLowerCase();
+    const kw = q.trim();
     if (!kw) return [];
-    return buildings
-      .map((b, i) => ({ b, i }))
-      .filter(({ b }) => {
-        const bag = [
-          b.name,
-          b.desc ?? "",
-          b.address ?? "",
-          b.category ?? "",
-          b.openingHours ?? "",
-          b.website ?? "",
-        ]
-          .join(" ")
-          .toLowerCase();
-        return bag.includes(kw);
-      })
-      .slice(0, 12);
+    // searchResults는 API 응답, 없으면 빈 배열
+    return searchResults.map((b) => {
+      const idx = buildings.findIndex((orig) => String(orig.id) === String(b.id));
+      return { b, i: idx };
+    });
+  }, [q, searchResults, buildings]);
+
+  // 검색 API 연동
+  useEffect(() => {
+    const kw = q.trim();
+    if (!kw) {
+      setSearchResults([]);
+      setSearchError(null);
+      setSearchLoading(false);
+      return;
+    }
+
+    const handle = setTimeout(() => {
+      setSearchLoading(true);
+      setSearchError(null);
+      searchBuildings(kw)
+        .then((res) => {
+          const normalized = res.map((b) => ({
+            ...b,
+            id: b.id ?? b.buildingId,
+            lat: b.lat ?? b.latitude ?? b.location?.lat,
+            lng: b.lng ?? b.longitude ?? b.location?.lng,
+          })) as BuildingDetail[];
+          setSearchResults(normalized);
+        })
+        .catch((err) => {
+          console.error("[App] search failed", err);
+          setSearchError("검색 결과를 불러오지 못했습니다.");
+          setSearchResults([]);
+        })
+        .finally(() => setSearchLoading(false));
+    }, 300);
+
+    return () => clearTimeout(handle);
   }, [q]);
+
+  // 빌딩 목록 + 상세 병합 로드
+  useEffect(() => {
+    console.info("[App] loading buildings...");
+    const load = async () => {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const list = await getBuildings();
+        const merged: BuildingDetail[] = [];
+        for (const b of list) {
+          try {
+            const detail = await getBuildingDetail(b.buildingId);
+            const lat =
+              detail.location?.lat ??
+              detail.latitude ??
+              b?.location?.lat ??
+              b?.latitude;
+            const lng =
+              detail.location?.lng ??
+              detail.longitude ??
+              b?.location?.lng ??
+              b?.longitude;
+            if (lat == null || lng == null) continue; // 좌표 없는 데이터는 스킵
+            merged.push({
+              ...detail,
+              id: detail.buildingId || b.buildingId,
+              lat,
+              lng,
+            } as BuildingDetail);
+          } catch {
+            const lat = b?.location?.lat ?? b?.latitude;
+            const lng = b?.location?.lng ?? b?.longitude;
+            if (lat == null || lng == null) continue;
+            merged.push({
+              id: b.buildingId,
+              name: b.name,
+              lat,
+              lng,
+            } as BuildingDetail);
+          }
+        }
+        setBuildings(merged);
+
+        // 즐겨찾기 초기 로드
+        try {
+          const favs = await getFavorites();
+          setFavorites(favs);
+          // 인포윈도우 별 표시를 위해 localStorage도 동기화
+          merged.forEach((b) => {
+            const isFav = favs.some((f) => String(f.roomId) === String(b.id));
+            localStorage.setItem(`favorite_${b.id}`, String(isFav));
+          });
+        } catch (e) {
+          console.warn("[App] failed to load favorites", e);
+        }
+      } catch (err) {
+        console.error(err);
+        setLoadError("건물 목록을 불러오지 못했습니다.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
 
   useEffect(() => {
     // 이벤트(storage) 발생시 실행
     const onStorage = (e: StorageEvent) => {
       if (!e.key || !e.key.startsWith("favorite_")) return;    // storage의 key가 없거나 "favorite_"으로 시작되지 않으면 무시
-
 
       if (selectedBuilding && `favorite_${selectedBuilding.id}` === e.key) {
         setSelectedBuilding({ ...selectedBuilding });    // 상세정보가 새창이여서 즐겨찾기 key 변경시 선택된 건물 상태 강제 업데이트
@@ -102,7 +203,9 @@ export default function App() {
         if (!favEl) return;
 
         // 즐겨찾기 여부로 빈별 or 색칠된 별
-        const isFav = localStorage.getItem(`favorite_${b.id}`) === "true";
+        const isFav =
+          localStorage.getItem(`favorite_${b.id}`) === "true" ||
+          favorites.some((f) => String(f.roomId) === String(b.id));
         favEl.style.color = isFav ? "gold" : "#ccc";
         favEl.textContent = isFav ? "★" : "☆";
       });
@@ -111,13 +214,16 @@ export default function App() {
     // 상세정보창(새창)을 닫았다가 다시 열어도 동일한 상태 유지
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, [selectedBuilding]);
+  }, [selectedBuilding, buildings]);
 
 
 
   useEffect(() => {
     const { naver } = window;
+    console.info("[App] map effect start", { hasNaver: !!naver, hasMapDiv: !!mapDivRef.current, buildings: buildings.length });
     if (!naver || !mapDivRef.current) return;
+    if (!buildings.length) return;
+    if (!buildings.length) return;
 
     // 지도 생성
     const map = new naver.maps.Map(mapDivRef.current, {
@@ -152,7 +258,8 @@ export default function App() {
     });
 
     // 마커 & 말풍선
-    buildings.forEach((b: Building, idx: number) => {
+    buildings.forEach((b, idx: number) => {
+      if (b.lat == null || b.lng == null) return;
       const pos = new naver.maps.LatLng(b.lat, b.lng);
       const marker = new naver.maps.Marker({
         map,
@@ -303,9 +410,25 @@ export default function App() {
           // 별버튼 클릭시 즐겨찾기에 저장 + 값 반전
           favBtn.onclick = (e) => {
             e.stopPropagation();
-            const updated = localStorage.getItem(storageKey) !== "true";
-            localStorage.setItem(storageKey, String(updated));
-            updateStar();
+            const willFav = localStorage.getItem(storageKey) !== "true";
+            const roomId = b.id;
+            const doToggle = async () => {
+              try {
+                if (willFav) {
+                  await addFavorite(roomId);
+                  addFavStore({ roomId });
+                } else {
+                  await removeFavorite(roomId);
+                  removeFavStore(roomId);
+                }
+                localStorage.setItem(storageKey, String(willFav));
+                updateStar();
+              } catch (err) {
+                console.error("[App] favorite toggle failed", err);
+                alert("즐겨찾기 저장에 실패했습니다.");
+              }
+            };
+            void doToggle();
           };
         };
 
@@ -361,7 +484,7 @@ export default function App() {
       tempMarkerRef.current = null;
       map.destroy();
     };
-  }, []);
+  }, [buildings]);
 
   // 특정 빌딩으로 이동 + 패널 전환 (검색)
   const focusBuilding = (idx: number) => {
@@ -387,7 +510,16 @@ export default function App() {
     e.preventDefault();
     if (!results.length) return;
     const pick = results[activeIdx >= 0 ? activeIdx : 0];
-    focusBuilding(pick.i);
+    if (pick.i >= 0) {
+      focusBuilding(pick.i);
+    } else if (pick.b.lat != null && pick.b.lng != null) {
+      // 검색 결과가 기존 배열에 없을 때 직접 선택
+      setSelectedBuilding(pick.b);
+      setPanelMode("detail");
+      if (mapRef.current) {
+        mapRef.current.panTo(new window.naver.maps.LatLng(pick.b.lat, pick.b.lng));
+      }
+    }
   };
 
   const onKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
@@ -411,6 +543,36 @@ export default function App() {
     navigator.clipboard?.writeText(text);
     alert("좌표를 복사했습니다:\n" + text);
   };
+
+  const focusSearchResult = (b: BuildingDetail, idx: number) => {
+    if (idx >= 0) {
+      focusBuilding(idx);
+      return;
+    }
+    // 마커는 없지만 좌표로 이동 + 패널 열기
+    if (b.lat != null && b.lng != null && mapRef.current) {
+      const pos = new window.naver.maps.LatLng(b.lat, b.lng);
+      mapRef.current.panTo(pos);
+    }
+    setSelectedBuilding(b);
+    setPanelMode("detail");
+  };
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-gray-700">
+        {loadError}
+      </div>
+    );
+  }
+
+  if (loading && !buildings.length) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-gray-700">
+        건물 데이터를 불러오는 중입니다...
+      </div>
+    );
+  }
 
   return (
     <div style={{ width: "100%", height: "100%" }}>
@@ -484,13 +646,21 @@ export default function App() {
           {panelMode === "list" ? (
             // ── 검색 결과 리스트 ──
             q ? (
-              results.length ? (
+              searchLoading ? (
+                <div style={{ padding: 16, fontSize: 13, color: "#666" }}>
+                  검색 중...
+                </div>
+              ) : searchError ? (
+                <div style={{ padding: 16, fontSize: 13, color: "#e11d48" }}>
+                  {searchError}
+                </div>
+              ) : results.length ? (
                 results.map(({ b, i }, idx) => (
                   <div
                     key={b.id}
                     onMouseEnter={() => setActiveIdx(idx)}
                     onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => focusBuilding(i)}
+                    onClick={() => focusSearchResult(b, i)}
                     style={{
                       display: "flex",
                       gap: 10,
