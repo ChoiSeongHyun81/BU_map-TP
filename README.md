@@ -20,8 +20,7 @@
 
 1. 프로젝트 클론 (깃허브에서)
 
-git clone https://github.com/pigpig8237/baekseok-map.git
-cd baekseok-map
+git clone -b (브랜치 버전) https://github.com/ChoiSeongHyun81/BU_map-TP.git
 
 
 2️. 패키지 설치
